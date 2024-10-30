@@ -1,0 +1,5 @@
+*.o
+server
+client
+tiny-aes/*.o
+tiny-aes/test.*
