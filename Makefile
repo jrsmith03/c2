@@ -11,10 +11,10 @@ default: server client
 	gcc -c $< -o $@
 
 server: $(SERVER)
-	gcc $(SERVER) -o $@
+	gcc $(SERVER) -o $@ tiny-aes/aes.c
 
 client: $(CLIENT)
-	gcc $(CLIENT) -o $@
+	gcc $(CLIENT) -o $@ tiny-aes/aes.c
 
 clean:
 	-rm -f *.o

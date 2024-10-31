@@ -1,5 +1,4 @@
 #include "includes.h"
-#include "tiny-aes/aes.h"
 
 int main(int argc, char** argv) {
     
@@ -12,6 +11,16 @@ int main(int argc, char** argv) {
     struct in_addr sin_addr;
     sin_addr.s_addr = INADDR_ANY; 
     addr.sin_addr = sin_addr; 
+
+    struct AES_ctx ctx;
+
+    unsigned char key[32] = "B8BF20A598E86D623CB26D2D81DD0761227632BC533635C9C85FF2C1518A7B99";
+    unsigned char iv[16] = "C3C006666DF105DD08EB05EE788C5711";
+
+    // TODO: obtain these from the config file
+    char auth_usr[MAX_USERNAME_LEN] = "jrsmith";
+    char auth_pwd[MAX_PASSWORD_LEN] = "password";
+
 
     if (bind(sockfd, &addr, sizeof(addr)) == -1) {
         printf("Binding failed!\n");
@@ -32,10 +41,35 @@ int main(int argc, char** argv) {
             printf("Error: unable to accept the client.");
             return -1;
         }
+        // Authentication
+        char attempt_usr[MAX_USERNAME_LEN];
+        char attempt_pwd[MAX_PASSWORD_LEN];
+
+        read(client_fd, attempt_usr, MAX_USERNAME_LEN);
+        read(client_fd, attempt_pwd, MAX_PASSWORD_LEN);
+
+        // Decrypt the auth fields
+        AES_init_ctx_iv(&ctx, key, iv);
+        AES_CTR_xcrypt_buffer (&ctx, attempt_usr, sizeof(attempt_usr));  // decrypt client username
+        AES_init_ctx_iv(&ctx, key, iv);
+        AES_CTR_xcrypt_buffer (&ctx, attempt_pwd, sizeof(attempt_pwd));  // decrypt client password
+        printf("  auth: provided user %s\n  auth: provided password %s\n", attempt_usr, attempt_pwd);
+        if (strcmp(attempt_usr, auth_usr) == 0 && strcmp(attempt_pwd, auth_pwd) == 0) {
+            printf("Client is successfully authenticated.\n");
+            write(client_fd, "OK", 16);
+        } else {
+            write(client_fd, "INVALID", 16);
+            printf("Error authenticating with the client, closing connection.\n");
+            close(client_fd);
+            continue;
+        }
+
         printf("Client connected on fd %d.\n", client_fd);
         // Read 32 bytes from the client, presumably to execute a command.
         char client_command[READ_LENGTH];
         read(client_fd, client_command, READ_LENGTH);
+        AES_init_ctx_iv(&ctx, key, iv);
+        AES_CTR_xcrypt_buffer (&ctx, client_command, sizeof(client_command)); // decrypt client command
         while (client_command != NULL) {
             // Spawn a new child process. system command allows for args to be passed in seemlessly
             // Specifically, it spawns a child process of /bin/sh that runs any command.
@@ -43,7 +77,7 @@ int main(int argc, char** argv) {
 
             // We need to manually run the chdir command due to the nature of the system() function.
             // NOTE/todo: Required to have an extra space after the command name.
-            char cmd_cpy[20];
+            char cmd_cpy[READ_LENGTH];
             char* check_tok;
             strncpy(cmd_cpy, client_command, sizeof(client_command));
             check_tok = strtok(cmd_cpy, " ");
@@ -69,6 +103,8 @@ int main(int argc, char** argv) {
             }
             
             // Write the output buffer to the client
+            AES_init_ctx_iv(&ctx, key, iv);
+            AES_CTR_xcrypt_buffer (&ctx, output, sizeof(output)); // encrypt terminal output
             if (write(client_fd, output, 4096) < 0) {
                 printf("Error while writing to client. %s\n",strerror(errno));
             }
@@ -76,6 +112,8 @@ int main(int argc, char** argv) {
             close(pipe_fd[0]);
             // Obtain a new command from client, or NULL if client is disconnected
             read(client_fd, client_command, READ_LENGTH);
+            AES_init_ctx_iv(&ctx, key, iv);
+            AES_CTR_xcrypt_buffer (&ctx, client_command, sizeof(client_command)); // decrypt client command
         }
     }
 }

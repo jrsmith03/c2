@@ -1,5 +1,8 @@
 {
     "files.associations": {
-        "server.h": "c"
+        "server.h": "c",
+        "includes.h": "c",
+        "stdio.h": "c",
+        "aes.h": "c"
     }
 }

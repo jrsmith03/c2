@@ -12,6 +12,7 @@
 #include <sys/types.h>
 #include <string.h>
 
+#include "tiny-aes/aes.h"
 
 #define MAX_PASSWORD_LEN 64
 #define MAX_USERNAME_LEN 32

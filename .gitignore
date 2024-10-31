@@ -2,4 +2,7 @@
 server
 client
 tiny-aes/*.o
-tiny-aes/test.*
+tiny-aes/test.elf
+tiny-aes/test.map
+tiny-aes/test.o
+.vscode/
